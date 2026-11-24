@@ -11,4 +11,4 @@ This project explores associations between video gaming habits and sleep among S
 
 ## Live Website
 
-Public Posit Connect Cloud URL will be added here after deployment.
+https://01a20fa2-b376-d09f-5cba-261398204a69.share.connect.posit.cloud
