@@ -263,6 +263,28 @@ ui <- navbarPage(
           
           plotlyOutput("selected_plot", height = "470px"),
           
+          conditionalPanel(
+            condition = "input.plot_choice == 'plot2'",
+            p("Sleep quality: 1 = Very poor; 10 = Very good.")
+          ),
+          
+          p(
+            "Axis controls change the displayed range only.",
+            "Summary statistics and model results use all respondents",
+            "in the selected subgroup."
+          ),
+          
+          conditionalPanel(
+            condition = "input.plot_choice == 'plot3'",
+            p(
+              "Each point represents one respondent.",
+              "When shown, the regression line describes the unadjusted relationship,",
+              "and the shaded band is a 95% confidence interval for the mean response.",
+              "When regression can be estimated, the model results below additionally",
+              "account for caffeine consumption and non-gaming screen time."
+            )
+          ),
+          
           hr(),
           
           h3("Summary Statistics"),
@@ -746,6 +768,25 @@ server <- function(input, output, session) {
   output$model_results <- renderPrint({
     data_now <- filtered_df()
     
+    # Select the gaming variable used by the current graph
+    x_now <- if (input$plot_choice == "plot2") {
+      data_now$bedtime_gaming_days
+    } else {
+      data_now$weekly_gaming_hours
+    }
+    
+    # A regression association requires variation in the predictor
+    validate(
+      need(
+        length(unique(x_now[is.finite(x_now)])) >= 2,
+        paste(
+          "Gaming time or frequency does not vary in this subgroup,",
+          "so its association with sleep cannot be estimated.",
+          "Descriptive summaries are shown above."
+        )
+      )
+    )
+    
     if (input$plot_choice == "plot1") {
       model <- lm(sleep_hours_per_night ~ weekly_gaming_hours,
         data = data_now)
@@ -837,6 +878,13 @@ server <- function(input, output, session) {
       
       cat("AIC Model Comparison\n\n")
       
+      cat("Outcome for all models: Sleep-onset latency\n")
+      cat("M1: Weekly gaming time\n")
+      cat("M2: Weekly gaming time + caffeine consumption\n")
+      cat("M3: Weekly gaming time + non-gaming screen time\n")
+      cat("M4: Weekly gaming time + caffeine consumption",
+          " + non-gaming screen time\n\n")
+      
       aic_table <- data.frame(Model = c("M1", "M2", "M3", "M4"),
         df = aic_values$df,
         AIC = round(aic_values$AIC, 2),
@@ -861,37 +909,75 @@ server <- function(input, output, session) {
   # ----------------------------------------------------------
   
   output$plot_description <- renderText({
+    data_now <- filtered_df()
     
-    if (input$plot_choice == "plot1") {
-      
-      paste("Weekly gaming time showed a small positive estimated association with",
-            "nightly sleep duration, but the association was not statistically significant",
-            "at the 5% level (p = 0.0794). The R-squared value was 0.0353, indicating",
-            "that weekly gaming time explained relatively little of the observed variation",
-            "in nightly sleep duration. Because these data are observational, the results",
-            "do not establish causation.")
-      
-      
-    } else if (input$plot_choice == "plot2") {
-      
-      paste("Bedtime gaming frequency showed a small positive estimated association with",
-            "self-reported sleep quality, but the association was not statistically significant",
-            "at the 5% level (p = 0.0765). The R-squared value was 0.0360, indicating",
-            "that bedtime gaming frequency explained relatively little of the observed",
-            "variation in sleep quality. The results should therefore be interpreted cautiously.")
-      
-      
-    } else {
-      
-      paste("After accounting for caffeine consumption and non-gaming screen time,",
-            "weekly gaming time showed a small positive estimated association with",
-            "sleep-onset latency, but the association was not statistically significant",
-            "at the 5% level (p = 0.1721). The adjusted R-squared was 0.0277, indicating",
-            "that the model explained relatively little of the variation in sleep-onset",
-            "latency. AIC values were very similar across the four candidate models.",
-            "Because these data are observational, the results do not establish causation.")
+    formula_now <- switch(input$plot_choice,
+                          plot1 = sleep_hours_per_night ~ weekly_gaming_hours,
+                          plot2 = sleep_quality ~ bedtime_gaming_days,
+                          plot3 = sleep_latency ~ weekly_gaming_hours +
+                            caffeine_servings + non_gaming_screen_time
+    )
+    
+    variables <- all.vars(formula_now)
+    data_now <- data_now[
+      complete.cases(data_now[, variables, drop = FALSE]),
+      , drop = FALSE
+    ]
+    x_name <- variables[2]
+    
+    if (length(unique(data_now[[x_name]])) < 2) {
+      return(paste(
+        "Gaming time or frequency does not vary in this subgroup,",
+        "so its association with sleep cannot be estimated.",
+        "Descriptive summaries are shown above."
+      ))
     }
     
+    model <- lm(formula_now, data = data_now)
+    result <- summary(model)
+    
+    if (df.residual(model) <= 0 ||
+        !x_name %in% rownames(result$coefficients)) {
+      return("The selected data do not support estimation of this association.")
+    }
+    
+    p_value <- result$coefficients[x_name, "Pr(>|t|)"]
+    
+    if (!is.finite(p_value)) {
+      return("The selected data do not support a reliable regression test.")
+    }
+    
+    topic <- switch(input$plot_choice,
+                    plot1 = "weekly gaming time and nightly sleep duration",
+                    plot2 = "bedtime gaming frequency and self-reported sleep quality",
+                    plot3 = "weekly gaming time and the time taken to fall asleep"
+    )
+    
+    evidence <- if (p_value < 0.05) {
+      "provide statistical evidence of an association"
+    } else {
+      "do not provide clear statistical evidence of an association"
+    }
+    
+    p_text <- if (p_value < 0.0001) {
+      "< 0.0001"
+    } else {
+      paste0("= ", sprintf("%.4f", p_value))
+    }
+    
+    adjustment <- if (input$plot_choice == "plot3") {
+      "This model accounts for caffeine consumption and non-gaming screen time. "
+    } else {
+      ""
+    }
+    
+    paste0(
+      "Among ", nobs(model), " respondents in the current subgroup, the results ",
+      evidence, " between ", topic, " (p ", p_text, "). ",
+      adjustment,
+      "A lack of statistical evidence does not prove there is no association. ",
+      "This observational survey cannot establish cause and effect."
+    )
   })
   
 }
