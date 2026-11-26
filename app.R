@@ -1009,11 +1009,35 @@ server <- function(input, output, session) {
       ""
     }
     
+    slope <- unname(coef(model)[x_name])
+
+    difference <- switch(
+      input$plot_choice,
+      plot1 = sprintf(
+        paste("Students who reported 10 more hours of gaming per week",
+              "were estimated to sleep %.1f %s per night on average."),
+        abs(slope) * 10 * 60,
+        if (slope >= 0) "minutes longer" else "fewer minutes"
+      ),
+      plot2 = sprintf(
+        paste("Each additional day of bedtime gaming in the past 14 days",
+              "was associated with a sleep quality rating %.2f points %s",
+              "on the 1–10 scale, on average."),
+        abs(slope),
+        if (slope >= 0) "higher" else "lower"
+      ),
+      plot3 = sprintf(
+        paste("At the same caffeine intake and non-gaming screen time,",
+              "students who reported 10 more hours of gaming per week",
+              "were estimated to take %.1f %s to fall asleep on average."),
+        abs(slope) * 10,
+        if (slope >= 0) "minutes longer" else "fewer minutes"
+      )
+    )
+
     paste0(
-      "Among ", nobs(model), " respondents in the current subgroup, the results ",
-      evidence, " between ", topic, " (p ", p_text, "). ",
-      adjustment,
-      "A lack of statistical evidence does not prove there is no association. ",
+      "Among ", nobs(model), " respondents in this subgroup: ", difference,
+      " The results ", evidence, " between ", topic, " (p ", p_text, "). ",
       "This observational survey cannot establish cause and effect."
     )
   })
