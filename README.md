@@ -1,15 +1,23 @@
-# STA304-Shiny-Website
-Interactive Shiny website for the STA304H5 group project: Gaming Habits and Sleep.
+# STA304 – Gaming Habits and Sleep
 
-## Gaming Habits and Sleep
+Sampling Error 505 | Fall 2026
 
-Interactive Shiny website for the STA304H5 Fall 2026 group project.
+Interactive Shiny dashboard with original Explore and About pages plus Overview, Model Lab and Diagnostics.
 
-**Group:** Sampling Error 505
+## Run locally
 
-This project explores associations between video gaming habits and sleep among STA304H5 students.
+Install `shiny` and `plotly` if needed. Open `app.R` in RStudio and click Run App. Keep the CSV in the same folder.
 
-## Live Website
+## Deployment
+
+Republish to the existing Posit Connect Cloud project; regenerate the manifest if needed. Confirm the live URL before updating public/private repositories.
+
+## Notes
+
+Original analysis retained. New model comparisons use the same complete cases. Diagnostics are exploratory; voluntary sampling limits inference. Student codenames are omitted from the deployment CSV.
+
+## Existing links (unverified)
 
 https://ouyang80-sta304-sampling-error-505.share.connect.posit.cloud
+
 https://01a20fad-9ce5-97e3-38a0-96d5e4767bdd.share.connect.posit.cloud

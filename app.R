@@ -16,6 +16,9 @@ df$weekly_gaming_hours <-
 # 2. User Interface
 # ------------------------------------------------------------
 
+
+variable_labels <- c("Weekly gaming hours"="weekly_gaming_hours", "Gaming days (14 days)"="gaming_days", "Bedtime gaming days"="bedtime_gaming_days", "Nightly sleep hours"="sleep_hours_per_night", "Sleep quality"="sleep_quality", "Sleep latency (minutes)"="sleep_latency", "Caffeine servings"="caffeine_servings", "Non-gaming screen time"="non_gaming_screen_time")
+
 ui <- navbarPage(
   
   title = "Gaming Habits and Sleep",
@@ -306,6 +309,41 @@ ui <- navbarPage(
   # TAB 2: ABOUT
   # ==========================================================
   
+  tabPanel("Overview", fluidPage(
+    h2("Research Dashboard"),
+    p("Descriptive overview of the voluntary STA304H5 survey. Filters on this page apply to the overview only."),
+    sidebarLayout(sidebarPanel(
+      selectInput("ov_group", "Respondents", c("All"="all", "Gamers"="gamers", "Non-gamers"="non_gamers")),
+      selectInput("ov_var", "Distribution variable", choices = variable_labels, selected="sleep_latency"),
+      sliderInput("ov_caffeine", "Caffeine servings", 0, max(df$caffeine_servings), c(0,max(df$caffeine_servings))),
+      sliderInput("ov_quality", "Sleep quality", 1,10,c(1,10))),
+      mainPanel(uiOutput("ov_cards"), fluidRow(column(6,plotlyOutput("ov_hist")),column(6,plotlyOutput("ov_box"))),
+        h3("Descriptive statistics"), tableOutput("ov_summary"),
+        h3("Correlation matrix"), p("Pearson correlations; constant variables are left blank. Correlation does not establish causality."), plotlyOutput("ov_corr",height="500px")))
+  )),
+  tabPanel("Model Lab", fluidPage(
+    h2("Regression and Model Comparison"),
+    sidebarLayout(sidebarPanel(
+      selectInput("lab_group", "Respondents", c("All"="all", "Gamers"="gamers", "Non-gamers"="non_gamers")),
+      selectInput("lab_q", "Research question", c("RQ1: Sleep duration"="q1", "RQ2: Sleep quality"="q2", "RQ3: Sleep latency"="q3"), selected="q3"),
+      selectInput("lab_model", "Model specification", c("Unadjusted"="m1", "Caffeine adjusted"="m2", "Screen time adjusted"="m3", "Both adjusted"="m4"), selected="m4"),
+      p("RQ1 and RQ2 use the original simple regression. Model selection applies to RQ3 only."),
+      sliderInput("lab_ci", "Confidence level (%)", 90,99,95),
+      numericInput("lab_x", "Gaming predictor for fitted mean (hours/week or days/14 days)", 10,min=0)),
+      mainPanel(h3("Coefficient estimates and confidence intervals"), plotlyOutput("lab_coef",height="320px"),tableOutput("lab_table"),
+        h3("Candidate model comparison"),tableOutput("lab_compare"),plotlyOutput("lab_aic",height="300px"),
+        h3("Estimated mean response"), verbatimTextOutput("lab_pred"),
+        p("Prediction fixes adjustment variables at subgroup medians. Intervals are model-based, not population-representative guarantees.")))
+  )),
+  tabPanel("Diagnostics", fluidPage(
+    h2("Model Diagnostics and Sensitivity"),
+    p("Uses the same subgroup and model specification selected in Model Lab."),
+    fluidRow(column(6,plotlyOutput("diag_resid")),column(6,plotlyOutput("diag_qq"))),
+    fluidRow(column(6,plotlyOutput("diag_cook")),column(6,plotlyOutput("diag_scale"))),
+    h3("Sensitivity to influential observations"),
+    p("Cook's distance above 4/n is a screening heuristic, not evidence of data error. The full-data model remains the primary result."),
+    tableOutput("diag_sensitivity"),
+    p("Model-based inference assumes an appropriate mean structure and independent, approximately homoskedastic errors; normality is relevant to small-sample inference. Voluntary sampling limits generalization."))) ,
   tabPanel(
     
     "About",
@@ -980,6 +1018,88 @@ server <- function(input, output, session) {
     )
   })
   
+
+  select_group <- function(g) {
+    if (g == "gamers") df[df$gaming_days > 0, , drop=FALSE]
+    else if (g == "non_gamers") df[df$gaming_days == 0, , drop=FALSE]
+    else df
+  }
+  overview <- reactive({
+    d <- select_group(input$ov_group)
+    d <- d[d$caffeine_servings >= input$ov_caffeine[1] & d$caffeine_servings <= input$ov_caffeine[2] & d$sleep_quality >= input$ov_quality[1] & d$sleep_quality <= input$ov_quality[2], ,drop=FALSE]
+    validate(need(nrow(d)>0,"No respondents match these filters.")); d
+  })
+  output$ov_cards <- renderUI({
+    d <- overview()
+    fluidRow(lapply(list(c("Responses",nrow(d)),c("Mean sleep hours",round(mean(d$sleep_hours_per_night),2)),c("Mean quality",round(mean(d$sleep_quality),2)),c("Mean latency (min)",round(mean(d$sleep_latency),2))),function(v) column(3,div(class="about-box",h4(v[1]),h2(v[2])))))
+  })
+  output$ov_hist <- renderPlotly({
+    d <- overview(); v <- input$ov_var; label <- names(variable_labels)[match(v,variable_labels)]
+    plot_ly(x=d[[v]],type="histogram",marker=list(color="#397CB7")) |> layout(title="Distribution",xaxis=list(title=label),yaxis=list(title="Count"))
+  })
+  output$ov_box <- renderPlotly({
+    d <- overview(); v <- input$ov_var; label <- names(variable_labels)[match(v,variable_labels)]
+    plot_ly(x=ifelse(d$gaming_days>0,"Gamers","Non-gamers"),y=d[[v]],type="box",boxpoints="outliers",marker=list(color="#397CB7")) |> layout(title="Distribution by gaming status",yaxis=list(title=label),xaxis=list(title=""))
+  })
+  output$ov_summary <- renderTable({
+    d <- overview(); do.call(rbind,lapply(seq_along(variable_labels),function(i){x<-d[[variable_labels[[i]]]]; data.frame(Variable=names(variable_labels)[i],N=length(x),Mean=mean(x),SD=sd(x),Median=median(x),Q1=unname(quantile(x,.25)),Q3=unname(quantile(x,.75)),Min=min(x),Max=max(x))}))
+  },digits=2)
+  output$ov_corr <- renderPlotly({
+    d <- overview(); validate(need(nrow(d)>=2,"At least two respondents are needed."))
+    m <- suppressWarnings(cor(d[,unname(variable_labels)])); labs <- names(variable_labels)
+    plot_ly(x=labs,y=labs,z=m,type="heatmap",zmin=-1,zmax=1,colorscale="RdBu",reversescale=TRUE) |> layout(margin=list(l=150,b=150),xaxis=list(tickangle=-45))
+  })
+  lab_data <- reactive({
+    d <- select_group(input$lab_group)
+    y <- switch(input$lab_q,q1="sleep_hours_per_night",q2="sleep_quality",q3="sleep_latency")
+    x <- if(input$lab_q=="q2") "bedtime_gaming_days" else "weekly_gaming_hours"
+    vars <- c(y,x,if(input$lab_q=="q3") c("caffeine_servings","non_gaming_screen_time"))
+    d <- d[complete.cases(d[,vars,drop=FALSE]),,drop=FALSE]
+    validate(need(nrow(d)>4 && length(unique(d[[x]]))>1,"Insufficient variation or sample size for regression in this subgroup."))
+    list(d=d,y=y,x=x)
+  })
+  lab_models <- reactive({
+    a <- lab_data(); terms <- list(m1=a$x)
+    if(input$lab_q=="q3") terms <- c(terms,list(m2=c(a$x,"caffeine_servings"),m3=c(a$x,"non_gaming_screen_time"),m4=c(a$x,"caffeine_servings","non_gaming_screen_time")))
+    lapply(terms,function(t) lm(reformulate(t,response=a$y),data=a$d))
+  })
+  lab_fit <- reactive({
+    m <- lab_models(); f <- if(input$lab_q=="q3") m[[input$lab_model]] else m[[1]]
+    validate(need(df.residual(f)>0 && f$rank==length(coef(f)),"Model is rank deficient or has insufficient residual degrees of freedom.")); f
+  })
+  coef_table <- reactive({
+    f <- lab_fit(); sm <- summary(f)$coefficients; ci <- confint(f,level=input$lab_ci/100)
+    data.frame(Term=rownames(sm),Estimate=sm[,1],SE=sm[,2],Lower=ci[,1],Upper=ci[,2],P_value=sm[,4],row.names=NULL)
+  })
+  output$lab_table <- renderTable(coef_table(),digits=4)
+  output$lab_coef <- renderPlotly({
+    t <- coef_table(); t <- t[t$Term!="(Intercept)",,drop=FALSE]
+    plot_ly(t,x=~Estimate,y=~Term,type="scatter",mode="markers",error_x=list(type="data",symmetric=FALSE,array=t$Upper-t$Estimate,arrayminus=t$Estimate-t$Lower),marker=list(size=10,color="#397CB7")) |> layout(xaxis=list(title="Coefficient (original units)"),shapes=list(list(type="line",x0=0,x1=0,y0=0,y1=1,yref="paper",line=list(dash="dot"))),margin=list(l=165))
+  })
+  comparison <- reactive({
+    ms <- lab_models(); vals <- sapply(ms,AIC)
+    data.frame(Model=names(ms),AIC=unname(vals),Delta_AIC=unname(vals-min(vals)),Adjusted_R2=sapply(ms,function(f) summary(f)$adj.r.squared),Residual_SD=sapply(ms,function(f) summary(f)$sigma),N=sapply(ms,nobs),row.names=NULL)
+  })
+  output$lab_compare <- renderTable(comparison(),digits=3)
+  output$lab_aic <- renderPlotly({t<-comparison();plot_ly(t,x=~Model,y=~Delta_AIC,type="bar",marker=list(color="#397CB7")) |> layout(title="Delta AIC (lower is better)",yaxis=list(title="Delta AIC"))})
+  output$lab_pred <- renderPrint({
+    a<-lab_data(); f<-lab_fit(); x<-input$lab_x; req(is.finite(x)); r<-range(a$d[[a$x]])
+    validate(need(x>=r[1] && x<=r[2],paste("Enter a predictor within the observed range:",paste(r,collapse=" to "))))
+    nd<-as.data.frame(lapply(a$d[,all.vars(formula(f))[-1],drop=FALSE],median)); nd[[a$x]]<-x
+    print(nd); print(predict(f,newdata=nd,interval="confidence",level=input$lab_ci/100))
+  })
+  output$diag_resid <- renderPlotly({f<-lab_fit();plot_ly(x=fitted(f),y=residuals(f),type="scatter",mode="markers") |> layout(title="Residuals vs fitted",xaxis=list(title="Fitted values"),yaxis=list(title="Residuals"),shapes=list(list(type="line",x0=0,x1=1,xref="paper",y0=0,y1=0,line=list(dash="dot"))))})
+  output$diag_qq <- renderPlotly({f<-lab_fit();r<-rstandard(f);r<-r[is.finite(r)];validate(need(length(r)>1,"Not enough finite standardized residuals."));q<-qqnorm(r,plot.it=FALSE); z<-quantile(r,c(.25,.75)); slope<-diff(z)/diff(qnorm(c(.25,.75))); intercept<-z[1]-slope*qnorm(.25); plot_ly(x=q$x,y=q$y,type="scatter",mode="markers") |> add_lines(x=range(q$x),y=intercept+slope*range(q$x),inherit=FALSE,showlegend=FALSE) |> layout(title="Normal Q-Q",xaxis=list(title="Theoretical quantiles"),yaxis=list(title="Standardized residuals"),showlegend=FALSE)})
+  output$diag_cook <- renderPlotly({f<-lab_fit(); cd<-cooks.distance(f);plot_ly(x=seq_along(cd),y=cd,type="bar") |> layout(title="Cook's distance",xaxis=list(title="Observation index"),yaxis=list(title="Cook's D"),shapes=list(list(type="line",x0=0,x1=1,xref="paper",y0=4/nobs(f),y1=4/nobs(f),line=list(dash="dot",color="red"))))})
+  output$diag_scale <- renderPlotly({f<-lab_fit();plot_ly(x=fitted(f),y=sqrt(abs(rstandard(f))),type="scatter",mode="markers") |> layout(title="Scale-location",xaxis=list(title="Fitted values"),yaxis=list(title="Sqrt |standardized residual|"))})
+  output$diag_sensitivity <- renderTable({
+    f<-lab_fit(); a<-lab_data(); cd<-cooks.distance(f); keep<-is.finite(cd) & cd<=4/nobs(f); d<-model.frame(f)
+    stat<-function(m,label){sm<-summary(m)$coefficients; if(!a$x %in% rownames(sm)) return(data.frame(Sample=label,N=nobs(m),Slope=NA_real_,P_value=NA_real_));data.frame(Sample=label,N=nobs(m),Slope=sm[a$x,1],P_value=sm[a$x,4])}
+    full<-stat(f,"Full sample"); if(sum(keep)<=length(coef(f)) || length(unique(d[[a$x]][keep]))<2) return(full)
+    reduced<-lm(formula(f),data=d[keep,,drop=FALSE]); if(reduced$rank<length(coef(reduced))) return(full)
+    rbind(full,stat(reduced,"Excluding flagged observations"))
+  },digits=4)
+
 }
 
 # ------------------------------------------------------------

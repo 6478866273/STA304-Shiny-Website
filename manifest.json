@@ -2392,14 +2392,11 @@
     }
   },
   "files": {
-    ".RData": {
-      "checksum": "6630d27faf544e34020d6830f7f76ac9"
-    },
     "app.R": {
-      "checksum": "702717b826f0961f31dd504c72f37cb0"
+      "checksum": "97ac3827962b4bb5ffc6e03fbaee6ee0"
     },
     "STA304_Website_Data.csv": {
-      "checksum": "7581a7a4cf2b73860aa07df7e01df249"
+      "checksum": "ea47d49ef18dd89fbf8a81fc120e5b72"
     }
   },
   "users": null
