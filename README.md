@@ -16,7 +16,7 @@ Republish to the existing Posit Connect Cloud project; regenerate the manifest i
 
 Original analysis retained. New model comparisons use the same complete cases. Diagnostics are exploratory; voluntary sampling limits inference. Student codenames are omitted from the deployment CSV.
 
-## Existing links (unverified)
+## Existing links
 
 https://ouyang80-sta304-sampling-error-505.share.connect.posit.cloud
 
