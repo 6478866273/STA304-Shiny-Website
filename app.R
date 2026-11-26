@@ -896,7 +896,7 @@ server <- function(input, output, session) {
       
       cat("\nLowest AIC:", best_model, "\n")
       
-      cat("Primary model for Research Question 3: M4\n")
+      cat("We use M4 for Research Question 3 because it accounts for caffeine intake and non-gaming screen time before bed.\n")
       
       if (max(delta_aic) < 2) {
         cat("\nThe AIC values are very similar across all four",
